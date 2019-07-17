@@ -37,28 +37,28 @@ impl State {
         if index >= vec.len() {
             vec.resize(index + 1, false);
         }
-        vec.get_mut(index).unwrap()
+        vec.get_mut(index).expect("Failed to resize vector?")
     }
     fn get_bit(&self) -> bool {
+        let cell;
         if self.pos >= 0 {
-            self.pos_tape
-                .get(self.pos as usize)
-                .copied()
-                .unwrap_or(false)
+            cell = self.pos_tape.get(self.pos as usize)
         } else {
-            self.neg_tape
-                .get(-self.pos as usize - 1)
-                .copied()
-                .unwrap_or(false)
+            cell = self.neg_tape.get(-self.pos as usize - 1)
         }
+        cell.copied().unwrap_or(false)
     }
 
-    fn get_input_bit(&mut self) -> bool {
+    fn get_input_bit(&mut self) -> Result<bool, String> {
         // Read bits in little-endian order
-        let word = self.input.get(self.input_bit / 8).expect("Index out of bound in input stream");
-        let bit_value = word & (1u8 << self.input_bit % 8);
-        self.input_bit += 1; // Advance in the input stream
-        bit_value != 0
+        match self.input.get(self.input_bit / 8) {
+            Some(word) => {
+                let bit_value = word & (1u8 << self.input_bit % 8);
+                self.input_bit += 1; // Advance in the input stream
+                Ok(bit_value != 0)
+            }
+            None => Err(format!("Index out of bound in input stream: {}", self.input_bit))
+        }
     }
     fn push_output_bit(&mut self, bit: bool) {
         // Only need to adjust the value if we're writing a 1
@@ -66,12 +66,12 @@ impl State {
             if self.output_bit / 8 + 1 > self.output.len() {
                 self.output.push(0);
             }
-            let r = self.output.get_mut(self.output_bit / 8).unwrap();
+            let r = self.output.get_mut(self.output_bit / 8).expect("Failed to push enough output u8s");
             *r |= 1 << (self.output_bit % 8);
         }
         self.output_bit += 1;
     }
-    fn jump_to_matching_bracket(&mut self, init_char: char) {
+    fn jump_to_matching_bracket(&mut self, init_char: char) -> Result<(), String> {
         let match_char: char;
         let direction: i32;
         let position_adjust: usize;
@@ -86,7 +86,7 @@ impl State {
             direction = -1;
             position_adjust = 0; // Jump to exactly on the ]
         } else {
-            panic!("Character passed is neither '[' nor ']'")
+            return Err(format!("Character passed is neither '[' nor ']': {}", init_char))
         }
 
         let mut code_index = self.code_index;
@@ -95,9 +95,9 @@ impl State {
         let mut mismatch_count: u32 = 0;
         loop {
             if code_index == 0 {
-                panic!("Reached start of code while looking for {}", match_char)
+                return Err(format!("Reached start of code while looking for {}", match_char))
             } else if code_index + 1 == self.code.len() {
-                panic!("Reached end of code while looking for {}", match_char)
+                return Err(format!("Reached end of code while looking for {}", match_char))
             }
             // Checks above ensure we don't over/underflow
             code_index = (code_index as i32 + direction) as usize;
@@ -115,33 +115,43 @@ impl State {
             }
         }
         self.code_index = code_index + position_adjust;
+        return Ok(());
     }
 
-    pub fn step(&mut self) -> bool {
+    fn step(&mut self) -> Result<bool, String> {
+        // Return true if we need to keep stepping before terminating, false if we're done
         match self.code.get(self.code_index) {
-            None => false,
+            None => Ok(false),
             Some(&command) => {
-                match command {
-                    '+' => self.set_bit(!self.get_bit()), // Flip the bit under the cursor
-                    ',' => {
-                        // Set the bit under the cursor from the input stream
-                        let b = self.get_input_bit();
-                        self.set_bit(b);
-                    }
-                    ';' => self.push_output_bit(self.get_bit()), // Output the bit under the cursor
-                    '<' => self.pos -= 1, // Move the pointer one bit to the left
-                    '>' => self.pos += 1, // Move the pointer one bit to the right
+                let result = match command {
+                    '+' => Ok(self.set_bit(!self.get_bit())), // Flip the bit under the cursor
+                    ',' => self.get_input_bit().map(|b| self.set_bit(b)), // Set the cursor bit from input
+                    ';' => Ok(self.push_output_bit(self.get_bit())), // Output the bit under the cursor
+                    '<' => Ok(self.pos -= 1), // Move the pointer one bit to the left
+                    '>' => Ok(self.pos += 1), // Move the pointer one bit to the right
                     '[' if !self.get_bit() => self.jump_to_matching_bracket('['),
                     ']' if self.get_bit() => self.jump_to_matching_bracket(']'),
-                    _ => (),
-                }
+                    _ => Ok(()),
+                };
+                result.and_then(|_| {
                 // If we did a jump operation, don't move to the next instruction, we're already at it
                 if command != '[' && command != ']' {
                     self.code_index += 1;
                 }
-                true
+                Ok(true)
+                })
             }
         }
+    }
+    pub fn run(&mut self) -> Result<Vec<u8>, String> {
+        loop {
+            match self.step() {
+                Ok(true) => continue,
+                Ok(false) => break,
+                Err(e) => return Err(e)
+            }
+        }
+        return Ok(self.output.clone());
     }
 }
 
@@ -186,13 +196,13 @@ mod tests {
     fn test_get_input_bit() {
         // Should read little-endian order
         let mut state = State::new(Vec::new(), vec![0b10100011]);
-        assert_eq!(state.get_input_bit(), true);
-        assert_eq!(state.get_input_bit(), true);
-        assert_eq!(state.get_input_bit(), false);
-        assert_eq!(state.get_input_bit(), false);
-        assert_eq!(state.get_input_bit(), false);
-        assert_eq!(state.get_input_bit(), true);
-        assert_eq!(state.get_input_bit(), false);
-        assert_eq!(state.get_input_bit(), true);
+        assert_eq!(state.get_input_bit(), Ok(true));
+        assert_eq!(state.get_input_bit(), Ok(true));
+        assert_eq!(state.get_input_bit(), Ok(false));
+        assert_eq!(state.get_input_bit(), Ok(false));
+        assert_eq!(state.get_input_bit(), Ok(false));
+        assert_eq!(state.get_input_bit(), Ok(true));
+        assert_eq!(state.get_input_bit(), Ok(false));
+        assert_eq!(state.get_input_bit(), Ok(true));
     }
 }
