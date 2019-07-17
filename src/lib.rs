@@ -57,7 +57,10 @@ impl State {
                 self.input_bit += 1; // Advance in the input stream
                 Ok(bit_value != 0)
             }
-            None => Err(format!("Index out of bound in input stream: {}", self.input_bit))
+            None => Err(format!(
+                "Index out of bound in input stream: {}",
+                self.input_bit
+            )),
         }
     }
     fn push_output_bit(&mut self, bit: bool) {
@@ -66,7 +69,10 @@ impl State {
             if self.output_bit / 8 + 1 > self.output.len() {
                 self.output.push(0);
             }
-            let r = self.output.get_mut(self.output_bit / 8).expect("Failed to push enough output u8s");
+            let r = self
+                .output
+                .get_mut(self.output_bit / 8)
+                .expect("Failed to push enough output u8s");
             *r |= 1 << (self.output_bit % 8);
         }
         self.output_bit += 1;
@@ -86,7 +92,10 @@ impl State {
             direction = -1;
             position_adjust = 0; // Jump to exactly on the ]
         } else {
-            return Err(format!("Character passed is neither '[' nor ']': {}", init_char))
+            return Err(format!(
+                "Character passed is neither '[' nor ']': {}",
+                init_char
+            ));
         }
 
         let mut code_index = self.code_index;
@@ -95,9 +104,15 @@ impl State {
         let mut mismatch_count: u32 = 0;
         loop {
             if code_index == 0 {
-                return Err(format!("Reached start of code while looking for {}", match_char))
+                return Err(format!(
+                    "Reached start of code while looking for {}",
+                    match_char
+                ));
             } else if code_index + 1 == self.code.len() {
-                return Err(format!("Reached end of code while looking for {}", match_char))
+                return Err(format!(
+                    "Reached end of code while looking for {}",
+                    match_char
+                ));
             }
             // Checks above ensure we don't over/underflow
             code_index = (code_index as i32 + direction) as usize;
@@ -123,7 +138,7 @@ impl State {
         match self.code.get(self.code_index) {
             None => Ok(false),
             Some(&command) => {
-                let result = match command {
+                match command {
                     '+' => Ok(self.set_bit(!self.get_bit())), // Flip the bit under the cursor
                     ',' => self.get_input_bit().map(|b| self.set_bit(b)), // Set the cursor bit from input
                     ';' => Ok(self.push_output_bit(self.get_bit())), // Output the bit under the cursor
@@ -132,13 +147,13 @@ impl State {
                     '[' if !self.get_bit() => self.jump_to_matching_bracket('['),
                     ']' if self.get_bit() => self.jump_to_matching_bracket(']'),
                     _ => Ok(()),
-                };
-                result.and_then(|_| {
-                // If we did a jump operation, don't move to the next instruction, we're already at it
-                if command != '[' && command != ']' {
-                    self.code_index += 1;
                 }
-                Ok(true)
+                .and_then(|_| {
+                    // If we did a jump operation, don't move to the next instruction, we're already at it
+                    if command != '[' && command != ']' {
+                        self.code_index += 1;
+                    }
+                    Ok(true)
                 })
             }
         }
@@ -148,13 +163,12 @@ impl State {
             match self.step() {
                 Ok(true) => continue,
                 Ok(false) => break,
-                Err(e) => return Err(e)
+                Err(e) => return Err(e),
             }
         }
         return Ok(self.output.clone());
     }
 }
-
 
 #[cfg(test)]
 mod tests {
