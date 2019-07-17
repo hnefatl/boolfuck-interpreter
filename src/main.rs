@@ -8,5 +8,5 @@ fn main() {
     let code = "";
     let input = vec![];
     let mut state = State::new(code.chars().collect(), input);
-    let result = state.run();
+    let _result = state.run();
 }
