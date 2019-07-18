@@ -17,7 +17,7 @@ impl State {
             neg_tape: Vec::new(),
             input,
             input_bit: 0,
-            output: vec![0],
+            output: Vec::new(),
             output_bit: 0,
             code,
             code_index: 0,
@@ -46,14 +46,14 @@ impl State {
         } else {
             cell = self.neg_tape.get(-self.pos as usize - 1)
         }
-        cell.copied().unwrap_or(false)
+        cell.cloned().unwrap_or(false)
     }
 
     fn get_input_bit(&mut self) -> Result<bool, String> {
         // Read bits in little-endian order
         match self.input.get(self.input_bit / 8) {
             Some(word) => {
-                let bit_value = word & (1u8 << self.input_bit % 8);
+                let bit_value = word & (1u8 << (self.input_bit % 8));
                 self.input_bit += 1; // Advance in the input stream
                 Ok(bit_value != 0)
             }
@@ -64,11 +64,11 @@ impl State {
         }
     }
     fn push_output_bit(&mut self, bit: bool) {
+        if self.output_bit / 8 + 1 > self.output.len() {
+            self.output.push(0);
+        }
         // Only need to adjust the value if we're writing a 1
         if bit {
-            if self.output_bit / 8 + 1 > self.output.len() {
-                self.output.push(0);
-            }
             let r = self
                 .output
                 .get_mut(self.output_bit / 8)
@@ -129,7 +129,7 @@ impl State {
                 }
             }
         }
-        return Ok(code_index + position_adjust);
+        Ok(code_index + position_adjust)
     }
 
     fn step(&mut self) -> Result<bool, String> {
@@ -139,11 +139,11 @@ impl State {
             Some(&command) => {
                 let mut jump_taken = false;
                 match command {
-                    '+' => Ok(self.set_bit(!self.get_bit())), // Flip the bit under the cursor
-                    ',' => self.get_input_bit().map(|b| self.set_bit(b)), // Set the cursor bit from input
-                    ';' => Ok(self.push_output_bit(self.get_bit())), // Output the bit under the cursor
-                    '<' => Ok(self.pos -= 1), // Move the pointer one bit to the left
-                    '>' => Ok(self.pos += 1), // Move the pointer one bit to the right
+                    '+' => { let b = self.get_bit(); self.set_bit(!b); Ok(()) }, // Flip the bit under the cursor
+                    ',' => { let r = self.get_input_bit(); r.map(|b| self.set_bit(b)) }, // Set the cursor bit from input
+                    ';' => { let b = self.get_bit(); self.push_output_bit(b); Ok(()) }, // Output the bit under the cursor
+                    '<' => { self.pos -= 1; Ok(()) }, // Move the pointer one bit to the left
+                    '>' => { self.pos += 1; Ok(()) }, // Move the pointer one bit to the right
                     '[' if !self.get_bit() => self.get_matching_bracket('[').map(|i| {
                         self.code_index = i;
                         jump_taken = true;
@@ -166,6 +166,10 @@ impl State {
         }
     }
     pub fn run(&mut self) -> Result<Vec<u8>, String> {
+        if self.code.is_empty() {
+            return Ok(Vec::new());
+        }
+
         loop {
             match self.step() {
                 Ok(true) => continue,
@@ -173,7 +177,7 @@ impl State {
                 Err(e) => return Err(e),
             }
         }
-        return Ok(self.output.clone());
+        Ok(self.output.clone())
     }
 }
 

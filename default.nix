@@ -27,5 +27,6 @@ in
             rust1330.clippy-preview
         ];
 
+        # RLS fails to find libraries otherwise
         LD_LIBRARY_PATH = "${rust1330.rust}/lib:$LD_LIBRARY_PATH";
     }
